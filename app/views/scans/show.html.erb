@@ -48,7 +48,8 @@
     </div>
 
     <div class="px-6 py-4">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <!-- Summary Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div class="bg-gray-50 rounded-lg p-4">
           <div class="text-sm font-medium text-gray-500">Scan Date</div>
           <div class="text-lg font-semibold text-gray-900">
@@ -64,18 +65,55 @@
         <div class="bg-gray-50 rounded-lg p-4">
           <div class="text-sm font-medium text-gray-500">Risk Level</div>
           <div class="text-lg font-semibold">
-            <% high_count = @scan.vulnerabilities.where(severity: 'high').count %>
-            <% medium_count = @scan.vulnerabilities.where(severity: 'medium').count %>
-            <% if high_count > 0 %>
-              <span class="text-red-600">High Risk</span>
-            <% elsif medium_count > 0 %>
-              <span class="text-yellow-600">Medium Risk</span>
-            <% else %>
-              <span class="text-green-600">Low Risk</span>
-            <% end %>
+            <% risk_display = @scan.risk_level_display %>
+            <span class="<%= risk_display[:color] %> px-2 py-1 rounded-full text-sm"><%= risk_display[:text] %></span>
+          </div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+          <div class="text-sm font-medium text-gray-500">Scan Duration</div>
+          <div class="text-lg font-semibold text-gray-900">
+            <%= @scan.duration_display %>
           </div>
         </div>
       </div>
+
+      <!-- Vulnerability Summary -->
+      <% if @scan.completed? && @scan.vulnerabilities.any? %>
+        <div class="bg-white border rounded-lg p-6 mb-8">
+          <h3 class="text-lg font-medium text-gray-900 mb-4">Vulnerability Summary</h3>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <% critical_count = @scan.vulnerabilities.where(severity: 'critical').count %>
+            <% high_count = @scan.vulnerabilities.where(severity: 'high').count %>
+            <% medium_count = @scan.vulnerabilities.where(severity: 'medium').count %>
+            <% low_count = @scan.vulnerabilities.where(severity: 'low').count %>
+
+            <% if critical_count > 0 %>
+              <div class="text-center p-4 bg-red-100 rounded-lg border border-red-300">
+                <div class="text-2xl font-bold text-red-900"><%= critical_count %></div>
+                <div class="text-sm text-red-700 font-medium">Critical</div>
+              </div>
+            <% end %>
+            <% if high_count > 0 %>
+              <div class="text-center p-4 bg-red-50 rounded-lg border border-red-200">
+                <div class="text-2xl font-bold text-red-700"><%= high_count %></div>
+                <div class="text-sm text-red-600 font-medium">High</div>
+              </div>
+            <% end %>
+            <% if medium_count > 0 %>
+              <div class="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                <div class="text-2xl font-bold text-yellow-700"><%= medium_count %></div>
+                <div class="text-sm text-yellow-600 font-medium">Medium</div>
+              </div>
+            <% end %>
+            <% if low_count > 0 %>
+              <div class="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div class="text-2xl font-bold text-blue-700"><%= low_count %></div>
+                <div class="text-sm text-blue-600 font-medium">Low</div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
 
       <% if @scan.processing? %>
         <div class="text-center py-12">
@@ -104,59 +142,195 @@
         </div>
       <% elsif @scan.completed? %>
         <% if @scan.vulnerabilities.any? %>
-          <div class="space-y-6">
-            <% @scan.vulnerabilities.group_by(&:severity).each do |severity, vulnerabilities| %>
-              <div class="border rounded-lg overflow-hidden">
-                <div class="px-4 py-3 border-b
+          <!-- Enhanced Security Report Section -->
+          <% report = @scan.generate_report %>
+
+          <div class="mb-8">
+            <h3 class="text-xl font-semibold text-gray-900 border-b pb-2 mb-4">Security Assessment Summary</h3>
+
+            <% if report[:risk_assessment] %>
+              <div class="bg-gray-50 rounded-lg p-6 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <p class="text-sm text-gray-600">Risk Score</p>
+                    <p class="text-3xl font-bold <%= report[:risk_assessment][:risk_score] >= 70 ? 'text-red-600' : report[:risk_assessment][:risk_score] >= 40 ? 'text-yellow-600' : 'text-green-600' %>">
+                      <%= report[:risk_assessment][:risk_score] %>/100
+                    </p>
+                    <p class="text-sm font-medium mt-1"><%= report[:risk_assessment][:risk_level] %></p>
+                  </div>
+                  <div>
+                    <p class="text-sm text-gray-600">Exploitation Likelihood</p>
+                    <p class="text-sm font-medium mt-1"><%= report[:risk_assessment][:exploitation_likelihood] %></p>
+                  </div>
+                </div>
+
+                <% if report[:risk_assessment][:impact_assessment].any? %>
+                  <div class="mb-4">
+                    <p class="text-sm font-medium text-gray-700 mb-2">Potential Impact:</p>
+                    <ul class="list-disc list-inside text-sm text-gray-600 space-y-1">
+                      <% report[:risk_assessment][:impact_assessment].each do |impact| %>
+                        <li><%= impact %></li>
+                      <% end %>
+                    </ul>
+                  </div>
+                <% end %>
+
+                <% if report[:risk_assessment][:recommended_actions].any? %>
+                  <div>
+                    <p class="text-sm font-medium text-gray-700 mb-2">Recommended Actions:</p>
+                    <ul class="list-disc list-inside text-sm text-gray-600 space-y-1">
+                      <% report[:risk_assessment][:recommended_actions].each do |action| %>
+                        <li class="<%= action.include?('IMMEDIATE') ? 'text-red-600 font-medium' : '' %>"><%= action %></li>
+                      <% end %>
+                    </ul>
+                  </div>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+
+          <!-- Detailed Vulnerability Report -->
+          <div class="space-y-8">
+            <h3 class="text-xl font-semibold text-gray-900 border-b pb-2">Detailed Vulnerability Report</h3>
+            <% severity_order = ['critical', 'high', 'medium', 'low'] %>
+            <% severity_order.each do |severity| %>
+              <% vulnerabilities = @scan.vulnerabilities.where(severity: severity) %>
+              <% next if vulnerabilities.empty? %>
+              <div class="border-2 rounded-xl overflow-hidden shadow-sm
+                <%= case severity
+                    when 'critical' then 'border-red-300 bg-red-50'
+                    when 'high' then 'border-red-200 bg-red-25'
+                    when 'medium' then 'border-yellow-200 bg-yellow-25'
+                    when 'low' then 'border-blue-200 bg-blue-25'
+                    else 'border-gray-200 bg-gray-25'
+                    end %>">
+                <div class="px-6 py-4 border-b
                   <%= case severity
+                      when 'critical' then 'bg-red-100 border-red-200'
                       when 'high' then 'bg-red-50 border-red-200'
                       when 'medium' then 'bg-yellow-50 border-yellow-200'
                       when 'low' then 'bg-blue-50 border-blue-200'
                       else 'bg-gray-50 border-gray-200'
                       end %>">
-                  <h3 class="text-lg font-medium
-                    <%= case severity
-                        when 'high' then 'text-red-800'
-                        when 'medium' then 'text-yellow-800'
-                        when 'low' then 'text-blue-800'
-                        else 'text-gray-800'
-                        end %>">
-                    <%= severity.humanize %> Severity Issues (<%= vulnerabilities.count %>)
-                  </h3>
+                  <div class="flex items-center justify-between">
+                    <h3 class="text-xl font-semibold flex items-center
+                      <%= case severity
+                          when 'critical' then 'text-red-900'
+                          when 'high' then 'text-red-800'
+                          when 'medium' then 'text-yellow-800'
+                          when 'low' then 'text-blue-800'
+                          else 'text-gray-800'
+                          end %>">
+                      <% if severity == 'critical' %>
+                        <svg class="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                        </svg>
+                      <% elsif severity == 'high' %>
+                        <svg class="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                          <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                        </svg>
+                      <% elsif severity == 'medium' %>
+                        <svg class="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                        </svg>
+                      <% else %>
+                        <svg class="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                          <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                        </svg>
+                      <% end %>
+                      <%= severity.humanize %> Severity Issues
+                    </h3>
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium
+                      <%= case severity
+                          when 'critical' then 'bg-red-200 text-red-800'
+                          when 'high' then 'bg-red-100 text-red-700'
+                          when 'medium' then 'bg-yellow-100 text-yellow-700'
+                          when 'low' then 'bg-blue-100 text-blue-700'
+                          else 'bg-gray-100 text-gray-700'
+                          end %>">
+                      <%= vulnerabilities.count %> <%= 'issue'.pluralize(vulnerabilities.count) %>
+                    </span>
+                  </div>
                 </div>
-                <div class="divide-y divide-gray-200">
-                  <% vulnerabilities.each do |vulnerability| %>
-                    <div class="px-4 py-4">
-                      <div class="flex items-start justify-between">
-                        <div class="flex-1">
-                          <h4 class="text-sm font-medium text-gray-900">
-                            <%= vulnerability.vulnerability_type.humanize %>
-                          </h4>
-                          <p class="text-sm text-gray-600 mt-1">
-                            <span class="font-mono"><%= vulnerability.file_path %></span>
-                            <% if vulnerability.line_number %>
-                              : Line <%= vulnerability.line_number %>
-                            <% end %>
-                          </p>
-                          <% if vulnerability.description.present? %>
-                            <div class="mt-2 text-sm text-gray-700">
+                <div class="bg-white">
+                  <% vulnerabilities.each_with_index do |vulnerability, index| %>
+                    <div class="px-6 py-6 <%= 'border-t border-gray-200' if index > 0 %>">
+                      <div class="space-y-4">
+                        <!-- Vulnerability Header -->
+                        <div class="flex items-start justify-between">
+                          <div class="flex-1">
+                            <div class="flex items-center space-x-3">
+                              <h4 class="text-lg font-semibold text-gray-900">
+                                <%= vulnerability.vulnerability_type.humanize %>
+                              </h4>
+                              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                <%= case severity
+                                    when 'critical' then 'bg-red-100 text-red-800'
+                                    when 'high' then 'bg-red-100 text-red-700'
+                                    when 'medium' then 'bg-yellow-100 text-yellow-700'
+                                    when 'low' then 'bg-blue-100 text-blue-700'
+                                    else 'bg-gray-100 text-gray-700'
+                                    end %>">
+                                <%= severity.upcase %>
+                              </span>
+                            </div>
+                            <div class="mt-2 flex items-center text-sm text-gray-600">
+                              <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                              </svg>
+                              <span class="font-mono bg-gray-100 px-2 py-1 rounded text-xs"><%= vulnerability.file_path %></span>
+                              <% if vulnerability.line_number %>
+                                <span class="ml-2 text-gray-500">Line <%= vulnerability.line_number %></span>
+                              <% end %>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Description -->
+                        <% if vulnerability.description.present? %>
+                          <div class="bg-gray-50 rounded-lg p-4">
+                            <h5 class="text-sm font-medium text-gray-900 mb-2">Description</h5>
+                            <div class="text-sm text-gray-700">
                               <%= simple_format(vulnerability.description) %>
                             </div>
-                          <% end %>
-                          <% if vulnerability.code_snippet.present? %>
-                            <div class="mt-3">
-                              <div class="text-xs font-medium text-gray-500 mb-1">Code Snippet:</div>
-                              <pre class="bg-gray-100 rounded p-2 text-xs overflow-x-auto"><%= vulnerability.code_snippet %></pre>
+                          </div>
+                        <% end %>
+
+                        <!-- Code Snippet -->
+                        <% if vulnerability.code_snippet.present? %>
+                          <div class="bg-gray-50 rounded-lg p-4">
+                            <h5 class="text-sm font-medium text-gray-900 mb-2">Vulnerable Code</h5>
+                            <pre class="bg-gray-900 text-green-400 rounded-lg p-4 text-sm overflow-x-auto"><code><%= vulnerability.code_snippet %></code></pre>
+                          </div>
+                        <% end %>
+
+                        <!-- Analysis and Fix in Two Columns -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <!-- Security Analysis -->
+                          <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                            <h5 class="text-sm font-semibold text-blue-900 mb-2 flex items-center">
+                              <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                              </svg>
+                              <%= vulnerability.ai_explanation.present? ? "AI Security Analysis" : "Security Analysis" %>
+                            </h5>
+                            <div class="text-sm text-blue-800">
+                              <%= simple_format(vulnerability.display_ai_explanation) %>
                             </div>
-                          <% end %>
-                          <% if vulnerability.ai_analysis.present? %>
-                            <div class="mt-3 p-3 bg-blue-50 rounded-md">
-                              <div class="text-xs font-medium text-blue-800 mb-1">AI Analysis:</div>
-                              <div class="text-sm text-blue-700">
-                                <%= simple_format(vulnerability.ai_analysis) %>
-                              </div>
+                          </div>
+
+                          <!-- Fix Suggestion -->
+                          <div class="bg-green-50 rounded-lg p-4 border border-green-200">
+                            <h5 class="text-sm font-semibold text-green-900 mb-2 flex items-center">
+                              <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                              </svg>
+                              <%= vulnerability.fix_suggestion.present? ? "AI Fix Recommendation" : "Recommended Fix" %>
+                            </h5>
+                            <div class="text-sm text-green-800">
+                              <%= simple_format(vulnerability.display_fix_suggestion) %>
                             </div>
-                          <% end %>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -199,11 +373,11 @@
   </div>
 </div>
 
-<script>
+<%= javascript_tag nonce: true do %>
   // Auto-refresh for processing scans
   <% if @scan.processing? %>
     setTimeout(function() {
       location.reload();
     }, 5000);
   <% end %>
-</script>
+<% end %>

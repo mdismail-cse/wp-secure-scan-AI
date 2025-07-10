@@ -12,6 +12,9 @@ Rails.application.routes.draw do
 
   resources :vulnerabilities, only: [ :show ]
 
+  # User API key management (singular resource since each user has only one)
+  resource :api_key, only: [:show, :new, :create, :edit, :update, :destroy]
+
   namespace :admin do
     resources :api_keys
     mount Sidekiq::Web => "/sidekiq"

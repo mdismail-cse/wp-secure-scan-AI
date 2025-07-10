@@ -12,7 +12,11 @@ class OpenaiAnalyzer
     analysis_results = {}
 
     vulnerabilities_by_type.each do |vuln_type, vulnerabilities|
-      analysis_results[vuln_type] = analyze_vulnerability_type(vuln_type, vulnerabilities)
+      analysis_result = analyze_vulnerability_type(vuln_type, vulnerabilities)
+      analysis_results[vuln_type] = analysis_result
+
+      # Update individual vulnerabilities with AI analysis
+      update_individual_vulnerabilities(vulnerabilities, analysis_result)
     end
 
     @scan.update(ai_analysis: analysis_results.to_json)
@@ -21,10 +25,10 @@ class OpenaiAnalyzer
   private
 
   def get_openai_client
-    api_key = @scan.user.api_keys.first&.key
-    return nil unless api_key
+    api_key_record = @scan.user.api_key
+    return nil unless api_key_record
 
-    OpenAI::Client.new(access_token: api_key)
+    OpenAI::Client.new(access_token: api_key_record.key)
   end
 
   def analyze_vulnerability_type(vuln_type, vulnerabilities)
@@ -145,5 +149,43 @@ class OpenaiAnalyzer
     else
       "Low"
     end
+  end
+
+  def update_individual_vulnerabilities(vulnerabilities, analysis_result)
+    return unless analysis_result[:analysis].present?
+
+    # Parse the AI analysis to extract individual explanations and fixes
+    analysis_text = analysis_result[:analysis]
+
+    vulnerabilities.each_with_index do |vulnerability, index|
+      # Skip if this vulnerability already has AI analysis
+      next if vulnerability.ai_explanation.present?
+
+      # For now, assign the same analysis to all vulnerabilities of this type
+      # In a more sophisticated implementation, you could parse the analysis
+      # to extract specific explanations for each vulnerability
+      vulnerability.update(
+        ai_explanation: analysis_text,
+        fix_suggestion: extract_fix_suggestion(analysis_text)
+      )
+    end
+  end
+
+  def extract_fix_suggestion(analysis_text)
+    # Extract fix suggestions from the analysis text
+    # Look for common patterns like "Fix:", "Solution:", "Remediation:", etc.
+    fix_patterns = [
+      /(?:Fix|Solution|Remediation|Recommendation):\s*(.+?)(?:\n\n|\z)/mi,
+      /(?:To fix|To resolve|To prevent):\s*(.+?)(?:\n\n|\z)/mi,
+      /(?:Use|Replace with|Instead):\s*(.+?)(?:\n\n|\z)/mi
+    ]
+
+    fix_patterns.each do |pattern|
+      match = analysis_text.match(pattern)
+      return match[1].strip if match
+    end
+
+    # If no specific fix pattern found, return a generic suggestion
+    "Please review the AI analysis above for specific remediation steps."
   end
 end

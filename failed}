@@ -1,0 +1,635 @@
+require 'zip'
+
+class VulnerabilityScanner
+  # WordPress-specific input sources to track
+  INPUT_SOURCES = [
+    '$_GET', '$_POST', '$_REQUEST', '$_COOKIE', '$_SERVER',
+    'filter_input', 'filter_var'
+  ].freeze
+
+  # WordPress hooks and functions to monitor
+  WP_HOOKS = {
+    ajax: ['wp_ajax_', 'wp_ajax_nopriv_'],
+    admin: ['admin_init', 'admin_menu', 'admin_post_'],
+    rest: ['register_rest_route'],
+    shortcode: ['add_shortcode'],
+    block: ['register_block_type']
+  }.freeze
+
+  VULNERABILITY_PATTERNS = {
+    "SQL Injection" => {
+      patterns: [
+        # Direct concatenation in wpdb methods
+        /\$wpdb->(?:query|get_results|get_var|get_row|get_col)\s*\(\s*[^)]*\.\s*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+        /\$wpdb->(?:query|get_results|get_var|get_row|get_col)\s*\(\s*"[^"]*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+        /\$wpdb->(?:query|get_results|get_var|get_row|get_col)\s*\(\s*'[^']*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+
+        # Missing prepare() on dynamic queries
+        /\$wpdb->(?:query|get_results|get_var|get_row|get_col)\s*\([^)]+\$[^)]+\)(?!.*prepare)/i,
+
+        # ORDER BY injection (often missed)
+        /ORDER\s+BY\s+[^'"\s]*\$_(?:GET|POST|REQUEST)/i,
+        /ORDER\s+BY\s+["']?\s*\.\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # IN clause injection
+        /WHERE\s+\w+\s+IN\s*\(\s*[^)]*\$_(?:GET|POST|REQUEST)/i,
+
+        # wp_unslash() before queries (magic quotes bypass)
+        /wp_unslash\s*\(\s*\$_(?:GET|POST|REQUEST)[^)]*\)[^;]*\$wpdb->/i,
+
+        # Direct MySQL functions
+        /mysql_query\s*\([^)]*\$_(?:GET|POST|REQUEST)/i,
+        /mysqli_query\s*\([^)]*\$_(?:GET|POST|REQUEST)/i,
+
+        # Raw SQL patterns
+        /(?:SELECT|INSERT|UPDATE|DELETE).*\$_(?:GET|POST|REQUEST|COOKIE)(?!.*\$wpdb->prepare)/i
+      ],
+      severity: "critical",
+      description: "SQL injection vulnerability detected. User input is directly concatenated into database query without proper escaping.",
+      remediation: "Use $wpdb->prepare() with proper placeholders (%s, %d, %f) for all dynamic values in SQL queries."
+    },
+    "Stored XSS" => {
+      patterns: [
+        # Direct output without escaping
+        /(?:echo|print|printf?)\s+\$_(?:GET|POST|REQUEST|COOKIE)(?!.*esc_)/i,
+        /<\?=\s*\$_(?:GET|POST|REQUEST|COOKIE)(?!.*esc_)/i,
+
+        # Shortcode vulnerabilities (Contributor+ stored XSS)
+        /add_shortcode\s*\([^,]+,\s*function[^}]+(?:echo|print|return)[^}]+\$(?:atts|attributes)(?!.*esc_)/i,
+        /\$(?:atts|attributes)\[[^\]]+\][^;]*(?:echo|print|return)(?!.*esc_)/i,
+
+        # Gutenberg block vulnerabilities
+        /register_block_type[^}]+render_callback[^}]+(?:echo|print|return)[^}]+\$(?:attributes|block_attributes)(?!.*esc_)/i,
+
+        # Elementor widget vulnerabilities
+        /class\s+\w+\s+extends\s+Widget_Base[^}]+render\(\)[^}]+get_settings_for_display[^}]+(?:echo|print)(?!.*esc_)/i,
+
+        # Missing escaping in templates
+        /\{\{\s*\$[^}]+\}\}(?!.*\|.*escape)/i,
+        /\<\%=\s*[^%]+\$[^%]+\%\>(?!.*escape)/i
+      ],
+      severity: "high",
+      description: "Stored Cross-Site Scripting vulnerability. User input is stored and displayed without proper HTML escaping.",
+      remediation: "Use WordPress escaping functions: esc_html(), esc_attr(), esc_url(), wp_kses() for all dynamic output."
+    },
+    "Reflected XSS" => {
+      patterns: [
+        # Query argument XSS
+        /add_query_arg\s*\([^)]+\$_(?:GET|POST|REQUEST)[^)]*\)(?!.*esc_url)/i,
+        /remove_query_arg\s*\([^)]+\$_(?:GET|POST|REQUEST)[^)]*\)(?!.*esc_url)/i,
+
+        # Admin notices XSS
+        /add_action\s*\(\s*['"]admin_notices[^}]+(?:echo|print)[^}]+\$_(?:GET|POST|REQUEST)(?!.*esc_)/i,
+
+        # Direct GET parameter output
+        /(?:echo|print|printf?)\s+\$_GET(?!.*esc_)/i,
+        /<\?=\s*\$_GET(?!.*esc_)/i,
+
+        # JavaScript context XSS
+        /\<script[^>]*\>[^<]*\$_(?:GET|POST|REQUEST)/i,
+        /document\.write\s*\([^)]*\$_(?:GET|POST|REQUEST)/i,
+        /innerHTML\s*=\s*[^;]*\$_(?:GET|POST|REQUEST)/i
+      ],
+      severity: "high",
+      description: "Reflected Cross-Site Scripting vulnerability. User input is immediately reflected in the response without escaping.",
+      remediation: "Always escape output based on context: esc_html() for HTML, esc_js() for JavaScript, esc_attr() for attributes."
+    },
+    "Remote Code Execution" => {
+      patterns: [
+        # Direct execution functions
+        /(?:eval|system|exec|shell_exec|passthru|popen|proc_open)\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+
+        # Dynamic function calls
+        /\$(?:func|function|callback)\s*=\s*\$_(?:GET|POST|REQUEST)/i,
+        /\$[^(]+\(\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # call_user_func with user input
+        /call_user_func(?:_array)?\s*\(\s*\$_(?:GET|POST|REQUEST)/i,
+        /call_user_func(?:_array)?\s*\(\s*[^,]+,\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # is_callable with execution
+        /is_callable\s*\(\s*\$_(?:GET|POST|REQUEST)[^)]*\)[^{]*\{[^}]*\$_(?:GET|POST|REQUEST)\s*\(/i,
+
+        # Deprecated functions
+        /create_function\s*\([^)]*\$_(?:GET|POST|REQUEST)/i,
+        /preg_replace\s*\([^)]*\/e[^)]*\$_(?:GET|POST|REQUEST)/i,
+
+        # Assert with user input
+        /assert\s*\(\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # Shortcode callbacks with dynamic execution
+        /add_shortcode\s*\([^,]+,\s*\$_(?:GET|POST|REQUEST)/i
+      ],
+      severity: "critical",
+      description: "Remote Code Execution vulnerability. User input is passed to dangerous functions that can execute arbitrary code.",
+      remediation: "Never pass user input to execution functions. Use whitelisting for dynamic function calls and avoid eval-like constructs."
+    },
+    "CSRF" => {
+      patterns: [
+        # Missing nonce verification in forms
+        /add_action\s*\(\s*['"]admin_post_[^}]+\$_POST(?!.*wp_verify_nonce)/i,
+        /add_action\s*\(\s*['"]wp_ajax_[^}]+\$_(?:POST|REQUEST)(?!.*check_ajax_referer)/i,
+
+        # State-changing GET requests
+        /\$_GET\[[^\]]+\][^}]*(?:update_option|delete_option|wp_insert_|wp_update_|wp_delete_)/i,
+
+        # Missing nonce in custom forms
+        /\<form[^>]+method=["']post["'][^>]*\>(?!.*wp_nonce_field)/i,
+
+        # Direct $_POST processing without nonce
+        /if\s*\(\s*isset\s*\(\s*\$_POST\[[^\]]+\]\s*\)[^}]+(?:update_|delete_|insert_)(?!.*wp_verify_nonce)/i
+      ],
+      severity: "medium",
+      description: "Cross-Site Request Forgery vulnerability. State-changing operations performed without nonce verification.",
+      remediation: "Always use wp_nonce_field() in forms and verify with wp_verify_nonce() or check_ajax_referer() for AJAX requests."
+    },
+    "Broken Access Control" => {
+      patterns: [
+        # Missing capability checks
+        /add_action\s*\(\s*['"](?:admin_menu|admin_init)[^}]+(?!.*current_user_can)/i,
+        /add_action\s*\(\s*['"]wp_ajax_[^}]+(?!.*current_user_can)/i,
+
+        # Public AJAX endpoints with sensitive operations
+        /add_action\s*\(\s*['"]wp_ajax_nopriv_[^}]+(?:update_option|delete_|wp_insert_|wp_update_)/i,
+
+        # REST API with open permissions
+        /register_rest_route[^}]+permission_callback[^}]+__return_true/i,
+        /register_rest_route(?!.*permission_callback)/i,
+
+        # Direct file operations without checks
+        /\$_(?:GET|POST|REQUEST)\[[^\]]+\][^}]*(?:unlink|rmdir|file_put_contents)(?!.*current_user_can)/i,
+
+        # Missing role verification
+        /is_admin\s*\(\s*\)(?!.*current_user_can)[^}]*(?:update_|delete_|insert_)/i
+      ],
+      severity: "high",
+      description: "Broken Access Control vulnerability. Sensitive operations performed without proper permission checks.",
+      remediation: "Always check user capabilities with current_user_can() before performing sensitive operations."
+    },
+    "Arbitrary File Upload" => {
+      patterns: [
+        # Missing file type validation
+        /move_uploaded_file\s*\(\s*\$_FILES(?!.*wp_check_filetype)/i,
+        /wp_handle_upload\s*\(\s*\$_FILES[^)]+test_form[^)]+false/i,
+
+        # Direct file operations with user input
+        /file_put_contents\s*\([^)]*\$_(?:GET|POST|REQUEST|FILES)/i,
+        /(?:fwrite|fputs)\s*\([^)]*\$_(?:GET|POST|REQUEST)/i,
+
+        # .htaccess upload vulnerability
+        /\$_FILES\[[^\]]+\]\[['"]name['"]\][^}]*\.htaccess/i,
+
+        # Missing MIME type validation
+        /\$_FILES\[[^\]]+\]\[['"]type['"]\](?!.*in_array|.*wp_check_filetype)/i,
+
+        # Zip extraction without validation
+        /(?:ZipArchive::extractTo|unzip_file)\s*\([^)]*\$_(?:GET|POST|REQUEST|FILES)(?!.*realpath)/i,
+
+        # Weak extension checking (blacklist)
+        /pathinfo\([^)]+PATHINFO_EXTENSION[^}]+(?:!=|!==)\s*['"](?:php|phtml)/i
+      ],
+      severity: "critical",
+      description: "Arbitrary File Upload vulnerability. Files can be uploaded without proper validation, potentially allowing code execution.",
+      remediation: "Use wp_check_filetype() with a whitelist of allowed extensions, validate MIME types, and never allow .htaccess uploads."
+    },
+    "Arbitrary File Read" => {
+      patterns: [
+        # Path traversal in file reading
+        /(?:file_get_contents|readfile|fopen|fread|fgets|file)\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+        /WP_Filesystem[^}]+get_contents\s*\(\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # Missing path validation
+        /\$_(?:GET|POST|REQUEST)\[[^\]]+\](?!.*realpath|.*basename)[^}]*(?:file_get_contents|readfile)/i,
+
+        # Directory traversal patterns
+        /\$_(?:GET|POST|REQUEST)[^}]*\.\.\/[^}]*(?:file_get_contents|include|require)/i
+      ],
+      severity: "high",
+      description: "Arbitrary File Read vulnerability. User can read sensitive files from the server.",
+      remediation: "Validate file paths with realpath() and ensure they're within allowed directories. Never use user input directly in file paths."
+    },
+    "Arbitrary File Write" => {
+      patterns: [
+        # Direct file writing with user input
+        /file_put_contents\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+        /(?:fwrite|fputs)\s*\([^)]*\$_(?:GET|POST|REQUEST)/i,
+        /WP_Filesystem[^}]+put_contents\s*\([^)]*\$_(?:GET|POST|REQUEST)/i,
+
+        # User-controlled file paths
+        /\$(?:file|path|filename)\s*=\s*\$_(?:GET|POST|REQUEST)[^}]*file_put_contents/i
+      ],
+      severity: "critical",
+      description: "Arbitrary File Write vulnerability. User can write to arbitrary files on the server.",
+      remediation: "Never allow user input to control file paths or content. Use a whitelist of allowed files and sanitize all content."
+    },
+    "Arbitrary File Delete" => {
+      patterns: [
+        # Direct deletion with user input
+        /(?:unlink|rmdir)\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+        /wp_delete_file\s*\(\s*\$_(?:GET|POST|REQUEST)/i,
+        /WP_Filesystem[^}]+delete\s*\(\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # User-controlled file paths for deletion
+        /\$(?:file|path)\s*=\s*\$_(?:GET|POST|REQUEST)[^}]*(?:unlink|wp_delete_file)/i
+      ],
+      severity: "high",
+      description: "Arbitrary File Deletion vulnerability. User can delete files from the server.",
+      remediation: "Implement strict access controls and validate file paths before deletion. Use a whitelist of deletable files."
+    },
+    "Local File Inclusion" => {
+      patterns: [
+        # Direct inclusion with user input
+        /(?:include|require|include_once|require_once)\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+
+        # Path traversal in includes
+        /(?:include|require)[^(]*\([^)]*\$_(?:GET|POST|REQUEST)[^)]*\.\.\//i,
+
+        # Dynamic file inclusion
+        /\$(?:file|page|module)\s*=\s*\$_(?:GET|POST|REQUEST)[^}]*(?:include|require)/i,
+
+        # Template inclusion vulnerabilities
+        /get_template_part\s*\(\s*\$_(?:GET|POST|REQUEST)/i,
+        /locate_template\s*\(\s*\$_(?:GET|POST|REQUEST)/i
+      ],
+      severity: "high",
+      description: "Local File Inclusion vulnerability. User input is used to include files, potentially exposing sensitive data or executing code.",
+      remediation: "Never use user input directly in include/require statements. Use a whitelist of allowed files."
+    },
+    "PHP Object Injection" => {
+      patterns: [
+        # Direct unserialization
+        /unserialize\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+        /maybe_unserialize\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+
+        # Base64 encoded payloads
+        /unserialize\s*\(\s*base64_decode\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+
+        # Unserialization in WordPress options
+        /get_option\s*\([^)]+\)[^}]*unserialize/i,
+        /update_option\s*\([^,]+,\s*\$_(?:GET|POST|REQUEST)/i
+      ],
+      severity: "critical",
+      description: "PHP Object Injection vulnerability. Unserialization of user input can lead to remote code execution.",
+      remediation: "Never unserialize user input. Use JSON encoding/decoding instead of PHP serialization for data transport."
+    },
+    "SSRF" => {
+      patterns: [
+        # WordPress HTTP API
+        /wp_remote_(?:get|post|request|head)\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/i,
+
+        # CURL with user input
+        /curl_setopt[^}]+CURLOPT_URL[^}]+\$_(?:GET|POST|REQUEST)/i,
+        /curl_init\s*\(\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # file_get_contents with URLs
+        /file_get_contents\s*\(\s*['"]https?:\/\/['"]\s*\.\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # Internal network access
+        /\$_(?:GET|POST|REQUEST)[^}]*(?:127\.0\.0\.1|localhost|0\.0\.0\.0|169\.254)/i
+      ],
+      severity: "medium",
+      description: "Server-Side Request Forgery vulnerability. User can make the server send requests to arbitrary URLs.",
+      remediation: "Validate and whitelist allowed URLs. Block requests to internal networks and implement timeouts."
+    },
+    "Open Redirect" => {
+      patterns: [
+        # WordPress redirects
+        /wp_redirect\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)(?!.*wp_validate_redirect)/i,
+        /wp_safe_redirect\s*\(\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # Direct header redirects
+        /header\s*\(\s*['"]Location:\s*['"]\s*\.\s*\$_(?:GET|POST|REQUEST)/i,
+        /header\s*\(\s*sprintf\s*\([^)]*Location[^)]*\$_(?:GET|POST|REQUEST)/i,
+
+        # JavaScript redirects
+        /window\.location\s*=\s*['"]?\s*\+?\s*\$_(?:GET|POST|REQUEST)/i
+      ],
+      severity: "medium",
+      description: "Open Redirect vulnerability. User can redirect victims to malicious websites.",
+      remediation: "Use wp_validate_redirect() or maintain a whitelist of allowed redirect destinations."
+    },
+    "Privilege Escalation" => {
+      patterns: [
+        # Arbitrary option updates
+        /update_option\s*\(\s*\$_(?:GET|POST|REQUEST)/i,
+        /update_option\s*\([^,]+,\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # User capability manipulation
+        /update_user_meta\s*\([^,]+,\s*['"]wp_capabilities['"]\s*,\s*\$_(?:GET|POST|REQUEST)/i,
+        /\$_(?:GET|POST|REQUEST)[^}]*wp_capabilities/i,
+
+        # Role manipulation
+        /wp_insert_user\s*\([^)]*['"]role['"]\s*=>\s*\$_(?:GET|POST|REQUEST)/i,
+        /wp_update_user\s*\([^)]*['"]role['"]\s*=>\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # Authentication bypass
+        /wp_set_auth_cookie\s*\(\s*\$_(?:GET|POST|REQUEST)/i,
+        /wp_set_current_user\s*\(\s*\$_(?:GET|POST|REQUEST)/i
+      ],
+      severity: "critical",
+      description: "Privilege Escalation vulnerability. User can elevate their privileges or manipulate other users' permissions.",
+      remediation: "Validate all user role and capability changes. Never allow direct manipulation of wp_capabilities or user roles."
+    },
+    "Race Condition" => {
+      patterns: [
+        # File operations without locking
+        /fopen[^}]+['"]\w\+['"][^}]+fwrite[^}]+fclose(?!.*flock)/i,
+
+        # Database operations without transactions
+        /\$wpdb->query\s*\([^}]+SELECT[^}]+UPDATE(?!.*START TRANSACTION)/i,
+
+        # Time-of-check-time-of-use
+        /file_exists\s*\([^)]+\)[^}]+unlink\s*\(/i,
+        /is_file\s*\([^)]+\)[^}]+file_get_contents\s*\(/i
+      ],
+      severity: "medium",
+      description: "Race Condition vulnerability. Concurrent operations may lead to security issues.",
+      remediation: "Use proper locking mechanisms (flock) and database transactions for concurrent operations."
+    },
+    "Type Juggling" => {
+      patterns: [
+        # Loose comparisons with user input
+        /\$_(?:GET|POST|REQUEST|COOKIE)\[[^\]]+\]\s*==\s*['"](?:0|1|true|false)['"]/i,
+        /['"](?:0|1|true|false)['"]\s*==\s*\$_(?:GET|POST|REQUEST)/i,
+
+        # Dangerous in_array usage
+        /in_array\s*\(\s*\$_(?:GET|POST|REQUEST)[^,)]+,\s*[^,)]+,\s*false\s*\)/i,
+
+        # strcmp with user input
+        /strcmp\s*\(\s*\$_(?:GET|POST|REQUEST)[^)]+\)\s*==\s*0/i
+      ],
+      severity: "low",
+      description: "Type Juggling vulnerability. Loose comparisons may lead to authentication or authorization bypass.",
+      remediation: "Use strict comparisons (=== and !==) and set strict parameter to true in array functions."
+    },
+    "Sensitive Data Exposure" => {
+      patterns: [
+        # Debug output
+        /(?:var_dump|print_r|var_export)\s*\(\s*\$_(?:GET|POST|REQUEST|SESSION|SERVER|COOKIE)/i,
+
+        # Error messages with sensitive data
+        /die\s*\(\s*[^)]*\$_(?:GET|POST|REQUEST|SESSION)/i,
+        /exit\s*\(\s*[^)]*\$_(?:GET|POST|REQUEST|SESSION)/i,
+
+        # Logging sensitive data
+        /error_log\s*\([^)]*(?:password|api_key|secret|token)/i,
+
+        # Exposed credentials
+        /(?:echo|print|printf?)\s*\([^)]*(?:password|api_key|secret|token|credential)/i,
+
+        # phpinfo exposure
+        /phpinfo\s*\(\s*\)/i
+      ],
+      severity: "medium",
+      description: "Sensitive Data Exposure vulnerability. Sensitive information may be leaked to unauthorized users.",
+      remediation: "Remove all debug output, implement proper error handling, and never expose sensitive data in responses."
+    }
+  }.freeze
+
+  # Additional patterns for WordPress-specific checks
+  WP_SPECIFIC_PATTERNS = {
+    "WordPress Hook Analysis" => {
+      patterns: [
+        # AJAX endpoints without proper security
+        /add_action\s*\(\s*['"]wp_ajax_nopriv_[^'"]+['"]\s*,\s*['"]([^'"]+)['"]\s*\)/i,
+        /add_action\s*\(\s*['"]wp_ajax_[^'"]+['"]\s*,\s*['"]([^'"]+)['"]\s*\)/i,
+
+        # REST API routes
+        /register_rest_route\s*\([^)]+\)/i,
+
+        # Shortcodes that might be vulnerable
+        /add_shortcode\s*\(\s*['"]([^'"]+)['"]\s*,/i,
+
+        # Gutenberg blocks
+        /register_block_type\s*\(/i
+      ],
+      severity: "low",
+      description: "WordPress hook detected that requires security analysis.",
+      remediation: "Ensure proper permission checks and nonce verification for all hooks."
+    }
+  }.freeze
+
+  def initialize(scan)
+    @scan = scan
+    @vulnerabilities_found = []
+    @wordpress_context = {
+      hooks: [],
+      ajax_endpoints: [],
+      rest_routes: [],
+      shortcodes: [],
+      blocks: []
+    }
+  end
+
+  def analyze
+    return unless @scan.plugin_file.attached?
+
+    @scan.update(status: "processing")
+
+    begin
+      extract_and_scan_files
+      perform_context_analysis
+      @scan.update(status: "completed")
+    rescue => e
+      Rails.logger.error "Scan failed for scan #{@scan.id}: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      @scan.update(status: "failed", scan_results: { error: e.message })
+    end
+  end
+
+  private
+
+  def extract_and_scan_files
+    temp_dir = Rails.root.join("tmp", "scans", @scan.id.to_s)
+    FileUtils.mkdir_p(temp_dir)
+
+    begin
+      # Extract zip file
+      @scan.plugin_file.open do |file|
+        extract_zip(file.path, temp_dir)
+      end
+
+      # Scan extracted files
+      scan_directory(temp_dir)
+    ensure
+      FileUtils.rm_rf(temp_dir)
+    end
+  end
+
+  def extract_zip(zip_path, extract_to)
+    Zip::File.open(zip_path) do |zip_file|
+      zip_file.each do |entry|
+        # Security check: prevent directory traversal
+        next if entry.name.include?("..")
+
+        file_path = File.join(extract_to, entry.name)
+        FileUtils.mkdir_p(File.dirname(file_path))
+        entry.extract(file_path) unless File.exist?(file_path)
+      end
+    end
+  end
+
+  def scan_directory(directory)
+    Dir.glob(File.join(directory, "**", "*")).each do |file_path|
+      next unless File.file?(file_path)
+      next unless scannable_file?(file_path)
+
+      scan_file(file_path, directory)
+    end
+  end
+
+  def scannable_file?(file_path)
+    extensions = %w[.php .js .html .json]
+    extensions.any? { |ext| file_path.downcase.end_with?(ext) }
+  end
+
+  def scan_file(file_path, base_directory)
+    begin
+      content = File.read(file_path)
+      relative_path = file_path.sub(base_directory.to_s + "/", "")
+
+      # First pass: Identify WordPress context
+      identify_wordpress_context(content, relative_path)
+
+      # Second pass: Scan for vulnerabilities
+      VULNERABILITY_PATTERNS.each do |vuln_type, config|
+        config[:patterns].each do |pattern|
+          scan_with_pattern(content, pattern, vuln_type, config, relative_path)
+        end
+      end
+
+      # Third pass: WordPress-specific patterns
+      WP_SPECIFIC_PATTERNS.each do |check_type, config|
+        config[:patterns].each do |pattern|
+          scan_with_pattern(content, pattern, check_type, config, relative_path)
+        end
+      end
+    rescue => e
+      Rails.logger.error "Error scanning file #{file_path}: #{e.message}"
+      # Continue with other files
+    end
+  end
+
+  def scan_with_pattern(content, pattern, vuln_type, config, file_path)
+    content.each_line.with_index(1) do |line, line_number|
+      if match = line.match(pattern)
+        # Check for false positives
+        next if false_positive?(line, vuln_type)
+
+        create_vulnerability(
+          vuln_type,
+          file_path,
+          line_number,
+          line.strip,
+          config[:severity],
+          config[:description],
+          config[:remediation]
+        )
+      end
+    end
+  end
+
+  def identify_wordpress_context(content, file_path)
+    # Identify AJAX endpoints
+    content.scan(/add_action\s*\(\s*['"]wp_ajax_(?:nopriv_)?([^'"]+)['"]/) do |match|
+      @wordpress_context[:ajax_endpoints] << { name: match[0], file: file_path }
+    end
+
+    # Identify REST routes
+    content.scan(/register_rest_route\s*\(\s*['"]([^'"]+)['"]/) do |match|
+      @wordpress_context[:rest_routes] << { route: match[0], file: file_path }
+    end
+
+    # Identify shortcodes
+    content.scan(/add_shortcode\s*\(\s*['"]([^'"]+)['"]/) do |match|
+      @wordpress_context[:shortcodes] << { name: match[0], file: file_path }
+    end
+
+    # Identify Gutenberg blocks
+    content.scan(/register_block_type\s*\(\s*['"]([^'"]+)['"]/) do |match|
+      @wordpress_context[:blocks] << { name: match[0], file: file_path }
+    end
+  end
+
+  def false_positive?(line, vuln_type)
+    # Check for common false positive patterns
+    case vuln_type
+    when "SQL Injection"
+      # Check if it's already using prepare
+      return true if line.include?("prepare(")
+    when "XSS", "Stored XSS", "Reflected XSS"
+      # Check if escaping is present
+      return true if line.match?(/esc_(?:html|attr|url|js)\s*\(/)
+      return true if line.match?(/wp_kses(?:_post)?\s*\(/)
+    when "CSRF"
+      # Check if nonce verification is nearby
+      return true if line.match?(/wp_verify_nonce|check_ajax_referer/)
+    when "Broken Access Control"
+      # Check if capability check is present
+      return true if line.match?(/current_user_can\s*\(/)
+    end
+    false
+  end
+
+  def create_vulnerability(type, file_path, line_number, code_snippet, severity, description = nil, remediation = nil)
+    # Generate contextual information
+    context = generate_context(type, file_path, line_number, code_snippet)
+
+    @scan.vulnerabilities.create!(
+      vulnerability_type: type,
+      file_path: file_path,
+      line_number: line_number,
+      code_snippet: code_snippet,
+      severity: severity,
+      description: description || generate_description(type, code_snippet)
+    )
+  end
+
+  def generate_context(type, file_path, line_number, code_snippet)
+    context = {
+      wordpress_hooks: [],
+      input_sources: [],
+      dangerous_functions: []
+    }
+
+    # Identify input sources in the code snippet
+    INPUT_SOURCES.each do |source|
+      if code_snippet.include?(source)
+        context[:input_sources] << source
+      end
+    end
+
+    # Check if this is within a WordPress hook
+    @wordpress_context.each do |hook_type, hooks|
+      hooks.each do |hook|
+        if hook[:file] == file_path
+          context[:wordpress_hooks] << { type: hook_type, details: hook }
+        end
+      end
+    end
+
+    context
+  end
+
+  def perform_context_analysis
+    # Analyze the collected WordPress context for additional vulnerabilities
+
+    # Check AJAX endpoints without nonce verification
+    @wordpress_context[:ajax_endpoints].each do |endpoint|
+      if endpoint[:name].start_with?('nopriv_')
+        # This is a public AJAX endpoint - flag for review
+        Rails.logger.info "Public AJAX endpoint found: #{endpoint[:name]} in #{endpoint[:file]}"
+      end
+    end
+
+    # Check REST routes without permission callbacks
+    @wordpress_context[:rest_routes].each do |route|
+      Rails.logger.info "REST route found: #{route[:route]} in #{route[:file]} - verify permission_callback"
+    end
+  end
+
+  def generate_description(type, code_snippet)
+    # Return the description from the pattern configuration if available
+    VULNERABILITY_PATTERNS[type]&.dig(:description) || "Security vulnerability detected in code."
+  end
+end

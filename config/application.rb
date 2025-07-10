@@ -26,5 +26,10 @@ module WpSecureScanAi
 
     # Configure Active Job to use Sidekiq
     config.active_job.queue_adapter = :sidekiq
+
+    # Configure Active Record Encryption
+    config.active_record.encryption.primary_key = ENV['ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY'] || 'lWyVKDXtwRNvoYlvQmTtTpUHbu23muoj'
+    config.active_record.encryption.deterministic_key = ENV['ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY'] || 'v32a49C7CqxtSn9kI6b1OudS795OtSOX'
+    config.active_record.encryption.key_derivation_salt = ENV['ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT'] || 'GjRWsvPywkLKNfKYjqQ3ZuXmz7wv6o09'
   end
 end

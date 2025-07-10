@@ -37,8 +37,13 @@
               <%= link_to "Dashboard", root_path, class: "text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium" %>
               <%= link_to "New Scan", new_scan_path, class: "text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium" %>
               <%= link_to "All Scans", scans_path, class: "text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium" %>
+              <% if current_user.api_key %>
+                <%= link_to "API Key", api_key_path, class: "text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium" %>
+              <% else %>
+                <%= link_to "Add API Key", new_api_key_path, class: "text-yellow-700 hover:text-yellow-800 px-3 py-2 rounded-md text-sm font-medium" %>
+              <% end %>
               <% if current_user.admin? %>
-                <%= link_to "API Keys", admin_api_keys_path, class: "text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium" %>
+                <%= link_to "Admin", admin_api_keys_path, class: "text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium" %>
               <% end %>
               <%= link_to "Sign Out", destroy_user_session_path, method: :delete, class: "bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700" %>
             <% else %>

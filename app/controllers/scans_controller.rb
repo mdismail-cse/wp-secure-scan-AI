@@ -13,9 +13,19 @@ class ScansController < ApplicationController
 
   def new
     @scan = current_user.scans.build
+    @has_api_key = current_user.api_key.present?
   end
 
   def create
+    # Rate limiting: max 5 scans per hour per user (disabled in development)
+    if Rails.env.production?
+      recent_scans = current_user.scans.where(created_at: 1.hour.ago..Time.current).count
+      if recent_scans >= 5
+        redirect_to new_scan_path, alert: "Rate limit exceeded. Please wait before submitting another scan."
+        return
+      end
+    end
+
     @scan = current_user.scans.build(scan_params)
     @scan.status = "pending"
 

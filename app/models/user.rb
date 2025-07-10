@@ -5,7 +5,7 @@ class User < ApplicationRecord
          :recoverable, :rememberable, :validatable
 
   has_many :scans, dependent: :destroy
-  has_many :api_keys, dependent: :destroy
+  has_one :api_key, dependent: :destroy
   has_many :vulnerabilities, through: :scans
 
   def admin?

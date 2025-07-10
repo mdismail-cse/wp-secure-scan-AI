@@ -6,12 +6,21 @@ class ScanProcessorJob < ApplicationJob
 
     # Run vulnerability scanner
     scanner = VulnerabilityScanner.new(scan)
-    scanner.analyze
+    scanner.scan
 
     # Run AI analysis if vulnerabilities found
     if scan.vulnerabilities.any?
-      analyzer = OpenaiAnalyzer.new(scan)
-      analyzer.analyze_vulnerabilities
+      api_key = scan.user.api_key
+      if api_key
+        analyzer = if api_key.openrouter?
+                     OpenrouterAnalyzer.new(scan)
+                   else
+                     OpenaiAnalyzer.new(scan)
+                   end
+        analyzer.analyze_vulnerabilities
+      else
+        Rails.logger.warn "No API key found for user #{scan.user.id}, skipping AI analysis"
+      end
     end
 
     Rails.logger.info "Scan #{scan_id} completed with #{scan.vulnerabilities.count} vulnerabilities found"

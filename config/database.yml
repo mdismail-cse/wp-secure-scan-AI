@@ -13,8 +13,8 @@ default: &default
   adapter: mysql2
   encoding: utf8mb4
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-  username: root
-  password:
+  username: rails
+  password: password123
   socket: /var/run/mysqld/mysqld.sock
 
 development:
@@ -29,8 +29,8 @@ test:
   database: wp_secure_scan_ai_test
   host: <%= ENV.fetch("DATABASE_HOST") { "127.0.0.1" } %>
   port: <%= ENV.fetch("DATABASE_PORT") { 3306 } %>
-  username: <%= ENV.fetch("DATABASE_USERNAME") { "root" } %>
-  password: <%= ENV.fetch("DATABASE_PASSWORD") { "" } %>
+  username: <%= ENV.fetch("DATABASE_USERNAME") { "rails" } %>
+  password: <%= ENV.fetch("DATABASE_PASSWORD") { "password123" } %>
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is

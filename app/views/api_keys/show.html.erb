@@ -1,0 +1,88 @@
+<div class="container mx-auto px-4 py-8">
+  <div class="max-w-2xl mx-auto">
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h1 class="text-2xl font-bold mb-6">Your API Key</h1>
+
+      <% if @api_key %>
+        <div class="mb-6">
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
+            <p class="text-gray-900"><%= @api_key.name %></p>
+          </div>
+
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Provider</label>
+            <p class="text-gray-900">
+              <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium
+                           <%= @api_key.openrouter? ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800' %>">
+                <%= @api_key.provider.upcase %>
+              </span>
+            </p>
+          </div>
+
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">API Key</label>
+            <div class="flex items-center space-x-2">
+              <input type="password"
+                     value="<%= @api_key.key %>"
+                     id="api-key-field"
+                     class="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50"
+                     readonly>
+              <button onclick="toggleApiKeyVisibility()"
+                      class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition">
+                <span id="toggle-text">Show</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Created</label>
+            <p class="text-gray-900"><%= @api_key.created_at.strftime("%B %d, %Y at %I:%M %p") %></p>
+          </div>
+        </div>
+        
+        <div class="flex space-x-4">
+          <%= link_to "Edit API Key", edit_api_key_path, 
+                      class: "px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition" %>
+          <%= link_to "Delete API Key", api_key_path, 
+                      method: :delete,
+                      data: { 
+                        turbo_method: :delete,
+                        turbo_confirm: "Are you sure? This will disable AI-powered vulnerability analysis for your scans." 
+                      },
+                      class: "px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition" %>
+        </div>
+      <% end %>
+    </div>
+    
+    <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <h3 class="font-semibold text-blue-900 mb-2">About AI Integration</h3>
+      <p class="text-blue-800 text-sm">
+        <% if @api_key&.openrouter? %>
+          Your OpenRouter API key provides access to multiple AI models for vulnerability analysis.
+          OpenRouter offers a unified API to various language models, allowing flexible and
+          cost-effective AI-powered security analysis.
+        <% else %>
+          Your OpenAI API key is used to provide AI-powered analysis of detected vulnerabilities.
+          This helps provide more context, severity assessment, and remediation suggestions for
+          security issues found in WordPress plugins.
+        <% end %>
+      </p>
+    </div>
+  </div>
+</div>
+
+<%= javascript_tag nonce: true do %>
+  function toggleApiKeyVisibility() {
+    const field = document.getElementById('api-key-field');
+    const toggleText = document.getElementById('toggle-text');
+    
+    if (field.type === 'password') {
+      field.type = 'text';
+      toggleText.textContent = 'Hide';
+    } else {
+      field.type = 'password';
+      toggleText.textContent = 'Show';
+    }
+  }
+<% end %>

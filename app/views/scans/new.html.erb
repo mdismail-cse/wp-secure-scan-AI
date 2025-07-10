@@ -1,7 +1,28 @@
 <div class="max-w-2xl mx-auto">
   <div class="bg-white rounded-lg shadow p-6">
     <h1 class="text-2xl font-bold text-gray-900 mb-6">Upload WordPress Plugin for Security Scan</h1>
-    
+
+    <% unless @has_api_key %>
+      <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+            </svg>
+          </div>
+          <div class="ml-3">
+            <h3 class="text-sm font-medium text-yellow-800">OpenAI API Key Required for AI Analysis</h3>
+            <div class="mt-2 text-sm text-yellow-700">
+              <p>You haven't added an OpenAI API key yet. Without it, your scan will still detect vulnerabilities, but won't include AI-powered analysis and recommendations.</p>
+              <p class="mt-2">
+                <%= link_to "Add your API key", new_api_key_path, class: "font-medium underline hover:text-yellow-800" %> to enable enhanced vulnerability analysis.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    <% end %>
+
     <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
       <div class="flex">
         <div class="flex-shrink-0">
@@ -111,11 +132,11 @@
   </div>
 </div>
 
-<script>
+<%= javascript_tag nonce: true do %>
 function updateFileName(input) {
   const fileName = input.files[0]?.name;
   const fileNameElement = document.getElementById('file-name');
-  
+
   if (fileName) {
     fileNameElement.textContent = `Selected: ${fileName}`;
     fileNameElement.classList.remove('hidden');
@@ -123,4 +144,4 @@ function updateFileName(input) {
     fileNameElement.classList.add('hidden');
   }
 }
-</script>
+<% end %>
