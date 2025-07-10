@@ -1,0 +1,23 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  scan: one
+  file_path: MyString
+  line_number: 1
+  vulnerability_type: MyString
+  severity: MyString
+  description: MyText
+  code_snippet: MyText
+  ai_explanation: MyText
+  fix_suggestion: MyText
+
+two:
+  scan: two
+  file_path: MyString
+  line_number: 1
+  vulnerability_type: MyString
+  severity: MyString
+  description: MyText
+  code_snippet: MyText
+  ai_explanation: MyText
+  fix_suggestion: MyText

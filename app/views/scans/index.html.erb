@@ -1,0 +1,197 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <div class="sm:flex sm:items-center">
+    <div class="sm:flex-auto">
+      <h1 class="text-2xl font-bold text-gray-900">Scan History</h1>
+      <p class="mt-2 text-sm text-gray-700">
+        View and manage your WordPress plugin security scans.
+      </p>
+    </div>
+    <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+      <%= link_to new_scan_path, 
+          class: "inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto" do %>
+        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+        </svg>
+        New Scan
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-8 flex flex-col">
+    <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+      <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+        <% if @scans.any? %>
+          <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+            <table class="min-w-full divide-y divide-gray-300">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Plugin
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Vulnerabilities
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Risk Level
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Scan Date
+                  </th>
+                  <th scope="col" class="relative px-6 py-3">
+                    <span class="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                <% @scans.each do |scan| %>
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="flex items-center">
+                        <div class="flex-shrink-0 h-10 w-10">
+                          <div class="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                            <svg class="h-6 w-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                          </div>
+                        </div>
+                        <div class="ml-4">
+                          <div class="text-sm font-medium text-gray-900">
+                            <%= scan.plugin_name %>
+                          </div>
+                          <div class="text-sm text-gray-500">
+                            ID: <%= scan.id %>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                        <%= case scan.status
+                            when 'completed' then 'bg-green-100 text-green-800'
+                            when 'processing' then 'bg-yellow-100 text-yellow-800'
+                            when 'failed' then 'bg-red-100 text-red-800'
+                            else 'bg-gray-100 text-gray-800'
+                            end %>">
+                        <%= scan.status.humanize %>
+                      </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <% if scan.completed? %>
+                        <%= scan.vulnerabilities.count %>
+                      <% else %>
+                        -
+                      <% end %>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <% if scan.completed? %>
+                        <% high_count = scan.vulnerabilities.where(severity: 'high').count %>
+                        <% medium_count = scan.vulnerabilities.where(severity: 'medium').count %>
+                        <% if high_count > 0 %>
+                          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            High Risk
+                          </span>
+                        <% elsif medium_count > 0 %>
+                          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            Medium Risk
+                          </span>
+                        <% else %>
+                          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            Low Risk
+                          </span>
+                        <% end %>
+                      <% else %>
+                        <span class="text-gray-400">-</span>
+                      <% end %>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <%= scan.created_at.strftime("%b %d, %Y") %>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div class="flex items-center space-x-2">
+                        <%= link_to scan_path(scan), 
+                            class: "text-indigo-600 hover:text-indigo-900" do %>
+                          View
+                        <% end %>
+                        <% if scan.completed? %>
+                          <span class="text-gray-300">|</span>
+                          <div class="relative inline-block text-left">
+                            <button type="button" class="text-gray-400 hover:text-gray-600" onclick="toggleDropdown(<%= scan.id %>)">
+                              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path>
+                              </svg>
+                            </button>
+                            <div id="dropdown-<%= scan.id %>" class="hidden origin-top-right absolute right-0 mt-2 w-32 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                              <div class="py-1">
+                                <%= link_to scan_path(scan, format: :html), 
+                                    class: "block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" do %>
+                                  HTML Report
+                                <% end %>
+                                <%= link_to scan_path(scan, format: :md), 
+                                    class: "block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" do %>
+                                  Markdown
+                                <% end %>
+                                <%= link_to scan_path(scan, format: :pdf), 
+                                    class: "block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" do %>
+                                  PDF
+                                <% end %>
+                              </div>
+                            </div>
+                          </div>
+                        <% end %>
+                      </div>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        <% else %>
+          <div class="text-center py-12">
+            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-gray-900">No scans yet</h3>
+            <p class="mt-1 text-sm text-gray-500">
+              Get started by uploading your first WordPress plugin for security analysis.
+            </p>
+            <div class="mt-6">
+              <%= link_to new_scan_path, 
+                  class: "inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" do %>
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Upload Plugin
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function toggleDropdown(scanId) {
+    const dropdown = document.getElementById('dropdown-' + scanId);
+    dropdown.classList.toggle('hidden');
+    
+    // Close other dropdowns
+    document.querySelectorAll('[id^="dropdown-"]').forEach(function(el) {
+      if (el.id !== 'dropdown-' + scanId) {
+        el.classList.add('hidden');
+      }
+    });
+  }
+
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', function(event) {
+    if (!event.target.closest('[onclick^="toggleDropdown"]')) {
+      document.querySelectorAll('[id^="dropdown-"]').forEach(function(el) {
+        el.classList.add('hidden');
+      });
+    }
+  });
+</script>
