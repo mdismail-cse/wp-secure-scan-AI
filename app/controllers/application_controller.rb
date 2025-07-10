@@ -8,11 +8,11 @@ class ApplicationController < ActionController::Base
   protected
 
   def configure_permitted_parameters
-    devise_parameter_sanitizer.permit(:sign_up, keys: [:email])
-    devise_parameter_sanitizer.permit(:account_update, keys: [:email])
+    devise_parameter_sanitizer.permit(:sign_up, keys: [ :email ])
+    devise_parameter_sanitizer.permit(:account_update, keys: [ :email ])
   end
 
   def require_admin
-    redirect_to root_path, alert: 'Access denied.' unless current_user&.admin?
+    redirect_to root_path, alert: "Access denied." unless current_user&.admin?
   end
 end

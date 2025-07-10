@@ -1,20 +1,20 @@
-require 'sidekiq/web'
+require "sidekiq/web"
 
 Rails.application.routes.draw do
   devise_for :users
-  root 'home#index'
+  root "home#index"
 
-  resources :scans, only: [:index, :show, :new, :create] do
+  resources :scans, only: [ :index, :show, :new, :create ] do
     member do
       get :download_report
     end
   end
 
-  resources :vulnerabilities, only: [:show]
+  resources :vulnerabilities, only: [ :show ]
 
   namespace :admin do
     resources :api_keys
-    mount Sidekiq::Web => '/sidekiq'
+    mount Sidekiq::Web => "/sidekiq"
   end
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.

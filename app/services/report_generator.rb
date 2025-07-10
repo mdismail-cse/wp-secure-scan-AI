@@ -7,26 +7,26 @@ class ReportGenerator
 
   def generate_pdf
     pdf = Prawn::Document.new
-    
+
     # Title
     pdf.text "WordPress Plugin Security Report", size: 24, style: :bold
     pdf.move_down 20
-    
+
     # Plugin Info
     pdf.text "Plugin: #{@scan.plugin_name}", size: 16, style: :bold
     pdf.text "Scan Date: #{@scan.created_at.strftime('%B %d, %Y at %I:%M %p')}"
     pdf.text "Status: #{@scan.status.humanize}"
     pdf.move_down 20
-    
+
     # Summary
     add_summary_to_pdf(pdf)
-    
+
     # Vulnerabilities by Type
     add_vulnerabilities_to_pdf(pdf)
-    
+
     # AI Analysis
     add_ai_analysis_to_pdf(pdf) if @ai_analysis.any?
-    
+
     pdf.render
   end
 
@@ -34,8 +34,8 @@ class ReportGenerator
     markdown = <<~MD
       # WordPress Plugin Security Report
 
-      **Plugin:** #{@scan.plugin_name}  
-      **Scan Date:** #{@scan.created_at.strftime('%B %d, %Y at %I:%M %p')}  
+      **Plugin:** #{@scan.plugin_name}#{'  '}
+      **Scan Date:** #{@scan.created_at.strftime('%B %d, %Y at %I:%M %p')}#{'  '}
       **Status:** #{@scan.status.humanize}
 
       ## Summary
@@ -69,7 +69,7 @@ class ReportGenerator
 
   def parse_ai_analysis
     return {} unless @scan.ai_analysis.present?
-    
+
     begin
       JSON.parse(@scan.ai_analysis)
     rescue JSON::ParserError
@@ -80,9 +80,9 @@ class ReportGenerator
   def add_summary_to_pdf(pdf)
     pdf.text "Summary", size: 18, style: :bold
     pdf.move_down 10
-    
+
     summary = generate_summary_data
-    
+
     pdf.text "Total Vulnerabilities: #{summary[:total_count]}"
     pdf.text "Critical: #{summary[:critical_count]}"
     pdf.text "High: #{summary[:high_count]}"
@@ -93,16 +93,16 @@ class ReportGenerator
 
   def add_vulnerabilities_to_pdf(pdf)
     return if @vulnerabilities.empty?
-    
+
     pdf.text "Detailed Findings", size: 18, style: :bold
     pdf.move_down 10
-    
+
     vulnerabilities_by_type = @vulnerabilities.group_by(&:vulnerability_type)
-    
+
     vulnerabilities_by_type.each do |vuln_type, vulns|
       pdf.text vuln_type, size: 14, style: :bold
       pdf.move_down 5
-      
+
       vulns.each_with_index do |vuln, index|
         pdf.text "#{index + 1}. File: #{vuln.file_path} (Line #{vuln.line_number})"
         pdf.text "   Severity: #{vuln.severity.humanize}"
@@ -110,7 +110,7 @@ class ReportGenerator
         pdf.text "   Description: #{vuln.description}"
         pdf.move_down 10
       end
-      
+
       pdf.move_down 15
     end
   end
@@ -119,18 +119,18 @@ class ReportGenerator
     pdf.start_new_page
     pdf.text "AI Security Analysis", size: 18, style: :bold
     pdf.move_down 10
-    
+
     @ai_analysis.each do |vuln_type, analysis|
       pdf.text vuln_type, size: 14, style: :bold
       pdf.move_down 5
-      
+
       pdf.text "Risk Level: #{analysis['risk_level']}"
       pdf.text "Priority: #{analysis['remediation_priority']}"
       pdf.move_down 10
-      
-      if analysis['analysis'].present?
+
+      if analysis["analysis"].present?
         pdf.text "Analysis:", style: :bold
-        pdf.text analysis['analysis']
+        pdf.text analysis["analysis"]
         pdf.move_down 15
       end
     end
@@ -139,10 +139,10 @@ class ReportGenerator
   def generate_summary_data
     {
       total_count: @vulnerabilities.count,
-      critical_count: @vulnerabilities.where(severity: 'critical').count,
-      high_count: @vulnerabilities.where(severity: 'high').count,
-      medium_count: @vulnerabilities.where(severity: 'medium').count,
-      low_count: @vulnerabilities.where(severity: 'low').count,
+      critical_count: @vulnerabilities.where(severity: "critical").count,
+      high_count: @vulnerabilities.where(severity: "high").count,
+      medium_count: @vulnerabilities.where(severity: "medium").count,
+      low_count: @vulnerabilities.where(severity: "low").count,
       files_affected: @vulnerabilities.pluck(:file_path).uniq.count,
       vulnerability_types: @vulnerabilities.pluck(:vulnerability_type).uniq
     }
@@ -150,7 +150,7 @@ class ReportGenerator
 
   def generate_summary_markdown
     summary = generate_summary_data
-    
+
     <<~MD
       - **Total Vulnerabilities:** #{summary[:total_count]}
       - **Critical:** #{summary[:critical_count]}
@@ -164,13 +164,13 @@ class ReportGenerator
 
   def generate_vulnerabilities_markdown
     return "No vulnerabilities found." if @vulnerabilities.empty?
-    
+
     markdown = ""
     vulnerabilities_by_type = @vulnerabilities.group_by(&:vulnerability_type)
-    
+
     vulnerabilities_by_type.each do |vuln_type, vulns|
       markdown += "### #{vuln_type}\n\n"
-      
+
       vulns.each_with_index do |vuln, index|
         markdown += <<~VULN
           #{index + 1}. **File:** `#{vuln.file_path}` (Line #{vuln.line_number})
@@ -180,30 +180,30 @@ class ReportGenerator
 
         VULN
       end
-      
+
       markdown += "\n"
     end
-    
+
     markdown
   end
 
   def generate_ai_analysis_markdown
     return "" if @ai_analysis.empty?
-    
+
     markdown = "## AI Security Analysis\n\n"
-    
+
     @ai_analysis.each do |vuln_type, analysis|
       markdown += "### #{vuln_type}\n\n"
       markdown += "- **Risk Level:** #{analysis['risk_level']}\n"
       markdown += "- **Priority:** #{analysis['remediation_priority']}\n"
       markdown += "- **Affected Files:** #{analysis['affected_files']&.join(', ')}\n\n"
-      
-      if analysis['analysis'].present?
+
+      if analysis["analysis"].present?
         markdown += "**Analysis:**\n\n"
         markdown += "#{analysis['analysis']}\n\n"
       end
     end
-    
+
     markdown
   end
 end
