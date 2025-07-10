@@ -44,11 +44,11 @@ class TestScanner
 
   def scan_files
     vulnerabilities = []
-    
+
     Dir.glob("#{@directory}/**/*.{php,js}").each do |file_path|
       content = File.read(file_path)
       relative_path = file_path.gsub(@directory + '/', '')
-      
+
       VULNERABILITY_PATTERNS.each do |type, config|
         config[:patterns].each do |pattern|
           content.lines.each_with_index do |line, index|
@@ -66,7 +66,7 @@ class TestScanner
         end
       end
     end
-    
+
     vulnerabilities
   end
 end

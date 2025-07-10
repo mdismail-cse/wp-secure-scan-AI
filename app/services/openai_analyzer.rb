@@ -8,9 +8,9 @@ class OpenaiAnalyzer
     return unless @client && @scan.vulnerabilities.any?
 
     vulnerabilities_by_type = @scan.vulnerabilities.group_by(&:vulnerability_type)
-    
+
     analysis_results = {}
-    
+
     vulnerabilities_by_type.each do |vuln_type, vulnerabilities|
       analysis_results[vuln_type] = analyze_vulnerability_type(vuln_type, vulnerabilities)
     end
@@ -38,7 +38,7 @@ class OpenaiAnalyzer
     end
 
     prompt = build_analysis_prompt(vuln_type, code_snippets)
-    
+
     begin
       response = @client.chat(
         parameters: {
@@ -81,7 +81,7 @@ class OpenaiAnalyzer
 
       Plugin: #{@scan.plugin_name}
       Vulnerability Type: #{vuln_type}
-      
+
       Code Snippets:
     PROMPT
 
@@ -111,10 +111,10 @@ class OpenaiAnalyzer
 
   def calculate_risk_level(vulnerabilities)
     severity_scores = {
-      'critical' => 4,
-      'high' => 3,
-      'medium' => 2,
-      'low' => 1
+      "critical" => 4,
+      "high" => 3,
+      "medium" => 2,
+      "low" => 1
     }
 
     total_score = vulnerabilities.sum { |v| severity_scores[v.severity] || 0 }
@@ -122,28 +122,28 @@ class OpenaiAnalyzer
 
     case avg_score
     when 3.5..4.0
-      'Critical'
+      "Critical"
     when 2.5..3.4
-      'High'
+      "High"
     when 1.5..2.4
-      'Medium'
+      "Medium"
     else
-      'Low'
+      "Low"
     end
   end
 
   def calculate_priority(vulnerabilities)
-    critical_count = vulnerabilities.count { |v| v.severity == 'critical' }
-    high_count = vulnerabilities.count { |v| v.severity == 'high' }
+    critical_count = vulnerabilities.count { |v| v.severity == "critical" }
+    high_count = vulnerabilities.count { |v| v.severity == "high" }
 
     if critical_count > 0
-      'Immediate'
+      "Immediate"
     elsif high_count > 2
-      'High'
+      "High"
     elsif high_count > 0
-      'Medium'
+      "Medium"
     else
-      'Low'
+      "Low"
     end
   end
 end

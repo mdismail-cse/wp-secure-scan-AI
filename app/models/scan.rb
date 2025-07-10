@@ -7,10 +7,10 @@ class Scan < ApplicationRecord
   validates :status, presence: true
 
   enum status: {
-    pending: 'pending',
-    processing: 'processing',
-    completed: 'completed',
-    failed: 'failed'
+    pending: "pending",
+    processing: "processing",
+    completed: "completed",
+    failed: "failed"
   }
 
   scope :recent, -> { order(created_at: :desc) }

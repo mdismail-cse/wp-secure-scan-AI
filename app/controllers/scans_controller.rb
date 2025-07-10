@@ -1,5 +1,5 @@
 class ScansController < ApplicationController
-  before_action :set_scan, only: [:show, :download_report]
+  before_action :set_scan, only: [ :show, :download_report ]
 
   def index
     @scans = current_user.scans.recent.includes(:vulnerabilities)
@@ -17,12 +17,12 @@ class ScansController < ApplicationController
 
   def create
     @scan = current_user.scans.build(scan_params)
-    @scan.status = 'pending'
+    @scan.status = "pending"
 
     if @scan.save
       # Process scan in background
       ScanProcessorJob.perform_later(@scan.id)
-      redirect_to @scan, notice: 'Plugin uploaded successfully. Scan is being processed.'
+      redirect_to @scan, notice: "Plugin uploaded successfully. Scan is being processed."
     else
       render :new, status: :unprocessable_entity
     end
@@ -30,14 +30,14 @@ class ScansController < ApplicationController
 
   def download_report
     respond_to do |format|
-      format.html { render 'reports/html_report', layout: 'report' }
+      format.html { render "reports/html_report", layout: "report" }
       format.pdf do
         pdf = ReportGenerator.new(@scan).generate_pdf
-        send_data pdf, filename: "#{@scan.plugin_name}_security_report.pdf", type: 'application/pdf'
+        send_data pdf, filename: "#{@scan.plugin_name}_security_report.pdf", type: "application/pdf"
       end
       format.md do
         markdown = ReportGenerator.new(@scan).generate_markdown
-        send_data markdown, filename: "#{@scan.plugin_name}_security_report.md", type: 'text/markdown'
+        send_data markdown, filename: "#{@scan.plugin_name}_security_report.md", type: "text/markdown"
       end
     end
   end
