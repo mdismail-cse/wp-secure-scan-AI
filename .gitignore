@@ -76,5 +76,10 @@ server.log
 .DS_Store
 Thumbs.db
 
-# Ignore Tailwind   
-./vendor/bundle/*
+# Ignore Tailwind and CSS builds
+/vendor/bundle/
+/app/assets/builds/*
+!/app/assets/builds/.keep
+/public/assets/
+/public/packs/
+/public/packs-test/
