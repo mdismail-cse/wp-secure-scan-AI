@@ -75,3 +75,6 @@ server.log
 # Ignore OS files
 .DS_Store
 Thumbs.db
+
+# Ignore Tailwind   
+./vendor/bundle/*
