@@ -115,7 +115,7 @@ GEM
     error_highlight (0.7.0)
     erubi (1.13.1)
     event_stream_parser (1.0.0)
-    faraday (2.13.2)
+    faraday (2.13.4)
       faraday-net_http (>= 2.0, < 3.5)
       json
       logger
@@ -147,7 +147,7 @@ GEM
     jbuilder (2.13.0)
       actionview (>= 5.0.0)
       activesupport (>= 5.0.0)
-    json (2.12.2)
+    json (2.13.2)
     language_server-protocol (3.17.0.5)
     lint_roller (1.1.0)
     lockbox (2.0.1)
@@ -292,7 +292,7 @@ GEM
       rubocop (>= 1.72)
       rubocop-performance (>= 1.24)
       rubocop-rails (>= 2.30)
-    ruby-openai (8.1.0)
+    ruby-openai (8.3.0)
       event_stream_parser (>= 0.3.0, < 2.0.0)
       faraday (>= 1)
       faraday-multipart (>= 1)
